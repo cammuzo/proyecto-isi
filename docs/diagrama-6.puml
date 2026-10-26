@@ -1,0 +1,234 @@
+@startuml diagrama_qa
+title Modelo conceptual UML - Plataforma colaborativa Q&A
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+' =========================
+' Autoría y usuarios
+' =========================
+
+interface Autor {
+  + getNombreVisible() : String
+}
+
+abstract class Usuario {
+  - email : String
+  - passwordHash : String
+  - nombreVisible : String
+  + publicarPregunta(
+      titulo : String,
+      cuerpo : String,
+      categoria : Categoria,
+      etiquetas : Etiqueta[*]
+    ) : Pregunta
+}
+
+class UsuarioGeneral
+
+class Moderador {
+  + eliminarPublicacion(p : Publicacion) : void
+}
+
+class Administrador {
+  + gestionarUsuarios() : void
+}
+
+class AgenteIA {
+  - nombreVisible : String
+  - proveedor : String
+  - modelo : String
+  - activo : boolean
+}
+
+Autor <|.. Usuario
+Autor <|.. AgenteIA
+
+Usuario <|-- UsuarioGeneral
+Usuario <|-- Moderador
+Moderador <|-- Administrador
+
+' =========================
+' Contenido del dominio
+' =========================
+
+abstract class Publicacion {
+  # cuerpo : String
+  # fechaPublicacion : DateTime
+  # votosPositivos : int
+  # votosNegativos : int
+  + /puntuacion : int
+  + votarPositivo() : void
+  + votarNegativo() : void
+}
+
+class Pregunta {
+  - titulo : String
+  + agregarRespuesta(cuerpo : String, autor : Autor) : Respuesta
+  + aceptarRespuesta(r : Respuesta, solicitante : Usuario) : void
+}
+
+class Respuesta {
+  - aceptada : boolean
+}
+
+class Categoria {
+  - nombre : String
+}
+
+class Etiqueta {
+  - nombre : String
+}
+
+Publicacion <|-- Pregunta
+Publicacion <|-- Respuesta
+
+Pregunta "*" --> "1" Usuario : autor
+Pregunta "1" *-- "0..*" Respuesta : respuestas
+Respuesta "*" --> "1" Autor : autor
+Pregunta "*" --> "1" Categoria : categoría
+Pregunta "*" -- "*" Etiqueta : etiquetas
+
+Usuario ..> Pregunta : <<crea>>
+Pregunta ..> Respuesta : <<crea>>
+Pregunta ..> Autor : recibe un autor existente
+
+note right of Pregunta
+  - Solo un Usuario humano puede crear una Pregunta.
+  - Solo el autor de la Pregunta puede aceptar respuestas.
+  - Como máximo puede existir una respuesta aceptada.
+  - Tiene una única Categoría y puede tener varias Etiquetas.
+
+  agregarRespuesta() no crea ni registra autores:
+  recibe un Autor previamente existente y crea
+  solamente la Respuesta.
+end note
+
+note bottom of Publicacion
+  /puntuacion = votosPositivos - votosNegativos
+end note
+
+note bottom of Respuesta
+  Respuesta solo conoce la abstracción Autor:
+  no distingue entre humanos y agentes de IA.
+end note
+
+' =========================
+' Registro de usuarios
+' =========================
+
+class RegistroUsuarios {
+  + registrarUsuarioGeneral(
+      email : String,
+      password : String,
+      nombreVisible : String
+    ) : UsuarioGeneral
+
+  + registrarAgenteIA(
+      nombreVisible : String,
+      proveedor : String,
+      modelo : String
+    ) : AgenteIA
+
+  - existeEmail(email : String) : boolean
+}
+
+RegistroUsuarios o--> "1" FabricaUsuarioGeneral : fabricaUsuarios
+RegistroUsuarios o--> "1" FabricaAgenteIA : fabricaAgentes
+RegistroUsuarios ..> UsuarioGeneral : registra
+RegistroUsuarios ..> AgenteIA : registra
+
+note bottom of RegistroUsuarios
+  Las fábricas se utilizan durante el registro
+  o la configuración inicial de los autores.
+
+  No intervienen al publicar preguntas
+  ni al agregar respuestas.
+end note
+
+' =========================
+' Factory Method de autoría
+' =========================
+
+abstract class FabricaAutor {
+  + {abstract} crearAutor() : Autor
+}
+
+class FabricaUsuarioGeneral {
+  - email : String
+  - passwordHash : String
+  - nombreVisible : String
+  + crearAutor() : Autor
+}
+
+class FabricaAgenteIA {
+  - nombreVisible : String
+  - proveedor : String
+  - modelo : String
+  + crearAutor() : Autor
+}
+
+FabricaAutor <|-- FabricaUsuarioGeneral
+FabricaAutor <|-- FabricaAgenteIA
+
+FabricaAutor ..> Autor : <<crea>>
+FabricaUsuarioGeneral ..> UsuarioGeneral : <<crea>>
+FabricaAgenteIA ..> AgenteIA : <<crea>>
+
+' =========================
+' Strategy para proveedores LLM
+' =========================
+
+interface EstrategiaLLM {
+  + generar(prompt : String) : String
+}
+
+class EstrategiaOpenAI {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+class EstrategiaGemini {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+class EstrategiaModeloLocal {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+EstrategiaLLM <|.. EstrategiaOpenAI
+EstrategiaLLM <|.. EstrategiaGemini
+EstrategiaLLM <|.. EstrategiaModeloLocal
+
+class ServicioRespuestasAutomaticas {
+  - etiquetaActivadora : String = "#ia-help"
+  - tiempoMaximoSinRespuesta : Duration
+  + cambiarEstrategia(e : EstrategiaLLM) : void
+  + debeResponder(p : Pregunta) : boolean
+  + responder(p : Pregunta) : Respuesta
+}
+
+ServicioRespuestasAutomaticas o--> "1" EstrategiaLLM : estrategia
+ServicioRespuestasAutomaticas --> "1" AgenteIA : agente configurado
+ServicioRespuestasAutomaticas ..> Pregunta : evalúa
+
+note bottom of ServicioRespuestasAutomaticas
+  Responde si la Pregunta tiene la etiqueta activadora
+  o si pasó el tiempo máximo sin respuestas.
+
+  Utiliza un AgenteIA previamente registrado:
+  no crea un agente nuevo por cada respuesta.
+
+  Flujo:
+  1. Genera el contenido mediante EstrategiaLLM.
+  2. Invoca p.agregarRespuesta(contenido, agente).
+  3. Pregunta crea la Respuesta con ese Autor existente.
+
+  La estrategia es intercambiable y no conoce el dominio.
+end note
+
+@enduml

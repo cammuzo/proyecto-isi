@@ -1,0 +1,197 @@
+@startuml diagrama_qa
+title Modelo Conceptual UML - Plataforma Colaborativa Q&A
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+' =========================================================
+' 1. AUTORIA Y USUARIOS (Polimorfismo)
+' =========================================================
+package "Autoría" {
+  interface Autor <<interface>> {
+    + getNombreVisible() : String
+  }
+
+  abstract class Usuario {
+    # email : String
+    # passwordHash : String
+    # nombreVisible : String
+    + getNombreVisible() : String
+    + publicarPregunta(titulo : String, cuerpo : String, cat : Categoria, etiq : Etiqueta[*]) : Pregunta
+  }
+
+  class UsuarioGeneral
+
+  class Moderador {
+    + eliminarPublicacion(p : Publicacion) : void
+  }
+
+  class Administrador {
+    + cambiarRol(u : Usuario, nuevoRol : String) : void
+    + suspenderUsuario(u : Usuario) : void
+  }
+
+  class AgenteIA {
+    - nombreVisible : String
+    - proveedor : String
+    - modelo : String
+    + getNombreVisible() : String
+  }
+
+  Autor <|.. Usuario
+  Autor <|.. AgenteIA
+  Usuario <|-- UsuarioGeneral
+  Usuario <|-- Moderador
+  Moderador <|-- Administrador
+}
+
+' =========================================================
+' 2. FACTORY METHOD DE AUTORIA
+' =========================================================
+package "Factory Method - Autoría" {
+  abstract class FabricaAutor {
+    + {abstract} crearAutor() : Autor
+  }
+
+  class FabricaAutorHumano {
+    - email : String
+    - passwordHash : String
+    - nombreVisible : String
+    + crearAutor() : Usuario
+  }
+
+  class FabricaAgenteIA {
+    - nombreVisible : String
+    - proveedor : String
+    - modelo : String
+    + crearAutor() : AgenteIA
+  }
+
+  FabricaAutor <|-- FabricaAutorHumano
+  FabricaAutor <|-- FabricaAgenteIA
+
+  FabricaAutor ..> Autor : <<crea>>
+  FabricaAutorHumano ..> UsuarioGeneral : <<crea>>
+  FabricaAgenteIA ..> AgenteIA : <<crea>>
+}
+
+' =========================================================
+' 3. CONTENIDO DEL DOMINIO
+' =========================================================
+package "Dominio Q&A" {
+  abstract class Publicacion {
+    # cuerpo : String
+    # fechaPublicacion : DateTime
+    # votosPositivos : int
+    # votosNegativos : int
+    + /puntuacion : int
+    + votarPositivo(votante : Usuario) : void
+    + votarNegativo(votante : Usuario) : void
+  }
+
+  class Pregunta {
+    - titulo : String
+    + agregarRespuesta(cuerpo : String, fabrica : FabricaAutor) : Respuesta
+    + aceptarRespuesta(r : Respuesta, solicitante : Usuario) : void
+  }
+
+  class Respuesta {
+    - aceptada : boolean
+    + marcarComoAceptada() : void
+  }
+
+  class Categoria {
+    - nombre : String
+  }
+
+  class Etiqueta {
+    - nombre : String
+  }
+
+  Publicacion <|-- Pregunta
+  Publicacion <|-- Respuesta
+}
+
+' Relaciones de Dominio y Autoría
+Pregunta "*" --> "1" Usuario : autor
+Pregunta "1" *-- "0..*" Respuesta : respuestas
+Respuesta "*" --> "1" Autor : autor
+Pregunta "*" --> "1" Categoria : categoría
+Pregunta "*" --> "0..*" Etiqueta : etiquetas
+
+' Dependencias de comportamiento
+Usuario ..> Pregunta : <<crea>>
+Publicacion ..> Usuario : <<validado por>>
+Pregunta ..> FabricaAutor : <<usa>>
+
+' =========================================================
+' 4. STRATEGY PARA PROVEEDORES LLM
+' =========================================================
+package "Strategy - Proveedores LLM" {
+  interface EstrategiaLLM <<interface>> {
+    + generar(prompt : String) : String
+  }
+
+  class EstrategiaOpenAI {
+    - modelo : String
+    + generar(prompt : String) : String
+  }
+
+  class EstrategiaGemini {
+    - modelo : String
+    + generar(prompt : String) : String
+  }
+
+  class EstrategiaModeloLocal {
+    - modelo : String
+    + generar(prompt : String) : String
+  }
+
+  EstrategiaLLM <|.. EstrategiaOpenAI
+  EstrategiaLLM <|.. EstrategiaGemini
+  EstrategiaLLM <|.. EstrategiaModeloLocal
+}
+
+class ServicioRespuestasAutomaticas {
+  - etiquetaActivadora : String = "#ia-help"
+  - tiempoMaximoSinRespuesta : Duration
+  + cambiarEstrategia(e : EstrategiaLLM) : void
+  + debeResponder(p : Pregunta) : boolean
+  + responder(p : Pregunta) : Respuesta
+}
+
+ServicioRespuestasAutomaticas o--> "1" EstrategiaLLM : estrategia
+ServicioRespuestasAutomaticas o--> "1" FabricaAutor : fabricaIA
+ServicioRespuestasAutomaticas ..> Pregunta : evalúa y responde
+
+' =========================================================
+' NOTAS ACLARATORIAS DEL MODELO
+' =========================================================
+note right of Pregunta
+  **Reglas de negocio:**
+  - Solo un Usuario (humano) puede crear una Pregunta.
+  - Solo el autor de la Pregunta puede aceptar respuestas.
+  - Puede haber varias respuestas aceptadas.
+  - Pertenece a 1 Categoría y tiene 0..* Etiquetas.
+end note
+
+note bottom of Publicacion
+  /puntuacion = votosPositivos - votosNegativos
+  Solo un Usuario registrado puede emitir votos.
+end note
+
+note bottom of Respuesta
+  Respuesta solo conoce la interfaz Autor:
+  es agnóstica a si fue escrita por un
+  humano o por un AgenteIA.
+end note
+
+note bottom of ServicioRespuestasAutomaticas
+  1. Evalúa si la Pregunta tiene "#ia-help" o expiró el tiempo.
+  2. Usa EstrategiaLLM.generar(prompt) para obtener el texto.
+  3. Invoca Pregunta.agregarRespuesta(texto, fabricaIA).
+end note
+
+@enduml

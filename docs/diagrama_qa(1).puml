@@ -1,0 +1,206 @@
+@startuml diagrama_qa
+title Plataforma Colaborativa de Preguntas y Respuestas - Modelo Conceptual
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+' =========================================================
+' AUTORIA (jerarquia polimorfica)
+' =========================================================
+package "Autoria" {
+  abstract class Author {
+    - id : int
+    + getDisplayName() : String
+  }
+
+  abstract class User {
+    - email : String
+    - passwordHash : String
+    + askQuestion(title : String, body : String, category : Category, tags : Tag[*]) : Question
+  }
+
+  class GeneralUser
+  class Moderator {
+    + removePost(post : Post) : void
+  }
+  class Admin {
+    + changeRole(user : User) : void
+    + banUser(user : User) : void
+  }
+
+  class LLMAgent {
+    - name : String
+    - modelName : String
+    + answer(question : Question) : Response
+  }
+
+  Author <|-- User
+  Author <|-- LLMAgent
+  User <|-- GeneralUser
+  User <|-- Moderator
+  Moderator <|-- Admin
+}
+
+' =========================================================
+' FACTORY METHOD (creacion de autores)
+' =========================================================
+package "Factory Method - Autoria" {
+  abstract class AuthorFactory {
+    + {abstract} createAuthor() : Author
+  }
+
+  class HumanAuthorFactory {
+    + createAuthor() : User
+  }
+
+  class LLMAgentFactory {
+    + createAuthor() : LLMAgent
+  }
+
+  AuthorFactory <|-- HumanAuthorFactory
+  AuthorFactory <|-- LLMAgentFactory
+  AuthorFactory ..> Author : <<creates>>
+  HumanAuthorFactory ..> GeneralUser : <<creates>>
+  HumanAuthorFactory ..> Moderator : <<creates>>
+  HumanAuthorFactory ..> Admin : <<creates>>
+  LLMAgentFactory ..> LLMAgent : <<creates>>
+}
+
+' =========================================================
+' STRATEGY (proveedores de LLM)
+' =========================================================
+package "Strategy - LLM" {
+  interface LLMStrategy <<interface>> {
+    + generate(prompt : String) : String
+  }
+
+  class OpenAIStrategy {
+    - model : String
+    + generate(prompt : String) : String
+  }
+
+  class GeminiStrategy {
+    - model : String
+    + generate(prompt : String) : String
+  }
+
+  class LocalModelStrategy {
+    - model : String
+    + generate(prompt : String) : String
+  }
+
+  LLMStrategy <|.. OpenAIStrategy
+  LLMStrategy <|.. GeminiStrategy
+  LLMStrategy <|.. LocalModelStrategy
+}
+
+LLMAgent o--> "1" LLMStrategy : strategy
+
+' =========================================================
+' DOMINIO (contenido)
+' =========================================================
+package "Dominio" {
+  abstract class Post {
+    # body : String
+    # createdAt : DateTime
+    # upvotes : int
+    # downvotes : int
+    + /score : int
+    + upvote() : void
+    + downvote() : void
+  }
+
+  class Question {
+    - title : String
+    + addResponse(body : String, author : Author) : Response
+    + acceptResponse(response : Response, by : User) : void
+  }
+
+  class Response {
+    - accepted : boolean
+  }
+
+  class Category {
+    - name : String
+  }
+
+  class Tag {
+    - name : String
+  }
+
+  Post <|-- Question
+  Post <|-- Response
+}
+
+' =========================================================
+' SERVICIOS (clientes del Factory Method)
+' =========================================================
+class RegistrationService {
+  + register(email : String, password : String, role : String) : User
+}
+
+class AutoAnswerService {
+  - triggerTag : String
+  - unansweredTimeout : Duration
+  + shouldAnswer(question : Question) : boolean
+  + answer(question : Question) : Response
+}
+
+' =========================================================
+' RELACIONES DE DOMINIO
+' =========================================================
+Question "1" *-- "0..*" Response : responses
+Question "*" --> "1" Category : category
+Question "*" -- "*" Tag : tags
+
+' Autoria: preguntas solo de humanos, respuestas de cualquier autor
+Question "*" --> "1" User : author
+Response "*" --> "1" Author : author
+
+' Creacion de contenido
+User ..> Question : <<creates>>
+Question ..> Response : <<creates>>
+
+' Servicios
+RegistrationService --> "1" AuthorFactory : factory
+AutoAnswerService --> "1" AuthorFactory : factory
+AutoAnswerService ..> LLMAgent : usa
+AutoAnswerService ..> Question : evalua
+
+' =========================================================
+' NOTAS DE DOMINIO
+' =========================================================
+note right of Question
+  Restricciones de dominio:
+  - Solo un User (humano) puede crear una Question.
+  - Solo el autor de la Question puede
+    marcar Responses como aceptadas.
+  - Puede haber varias Responses aceptadas.
+  - Exactamente una Category y 0..* Tags.
+end note
+
+note bottom of Post
+  /score = upvotes - downvotes
+end note
+
+note right of AutoAnswerService
+  Responde si la Question tiene el tag
+  "#ia-help" o si permanece sin respuestas
+  pasado el tiempo configurado.
+end note
+
+note bottom of LLMStrategy
+  Recibe un prompt (String), no una Question:
+  la estrategia queda desacoplada del dominio.
+end note
+
+note bottom of AuthorFactory
+  Los datos de creacion llegan como parametro
+  (email/password/rol para humanos; nombre/modelo/
+  estrategia para LLM). Se omite en la firma para
+  no cargar el diagrama.
+end note
+
+@enduml

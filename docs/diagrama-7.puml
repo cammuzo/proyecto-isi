@@ -1,0 +1,158 @@
+@startuml diagrama_qa
+title Modelo Conceptual - Plataforma Q&A
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+' =========================================================
+' 1. AUTORIA Y USUARIOS
+' =========================================================
+interface Autor {
+  + getNombreVisible() : String
+}
+
+abstract class Usuario {
+  # email : String
+  # passwordHash : String
+  # nombreVisible : String
+  + getNombreVisible() : String
+  + publicarPregunta(titulo : String, cuerpo : String, cat : Categoria) : Pregunta
+  + responderPregunta(p : Pregunta, cuerpo : String) : Respuesta
+}
+
+class UsuarioGeneral
+
+class Moderador {
+  + eliminarPublicacion(p : Publicacion) : void
+}
+
+class Administrador {
+  + gestionarUsuarios() : void
+}
+
+class AgenteIA {
+  - nombreVisible : String
+  - proveedor : String
+  - modelo : String
+  + getNombreVisible() : String
+}
+
+Autor <|.. Usuario
+Autor <|.. AgenteIA
+Usuario <|-- UsuarioGeneral
+Usuario <|-- Moderador
+Moderador <|-- Administrador
+
+' =========================================================
+' 2. FACTORY METHOD DE AUTORIA
+' =========================================================
+abstract class FabricaAutor {
+  + crearAutor() : Autor
+}
+
+class FabricaAutorHumano {
+  - email : String
+  - passwordHash : String
+  - nombreVisible : String
+  + crearAutor() : Usuario
+}
+
+class FabricaAgenteIA {
+  - nombreVisible : String
+  - proveedor : String
+  - modelo : String
+  + crearAutor() : AgenteIA
+}
+
+FabricaAutor <|-- FabricaAutorHumano
+FabricaAutor <|-- FabricaAgenteIA
+
+FabricaAutor ..> Autor : <<crea>>
+FabricaAutorHumano ..> UsuarioGeneral : <<crea>>
+FabricaAgenteIA ..> AgenteIA : <<crea>>
+
+' =========================================================
+' 3. CONTENIDO DEL DOMINIO
+' =========================================================
+abstract class Publicacion {
+  # cuerpo : String
+  # fechaPublicacion : DateTime
+  # votosPositivos : int
+  # votosNegativos : int
+  + puntuacion : int
+  + votarPositivo(votante : Usuario) : void
+  + votarNegativo(votante : Usuario) : void
+}
+
+class Pregunta {
+  - titulo : String
+  + agregarRespuesta(cuerpo : String, autor : Autor) : Respuesta
+  + aceptarRespuesta(r : Respuesta, solicitante : Usuario) : void
+}
+
+class Respuesta {
+  - aceptada : boolean
+  + marcarComoAceptada() : void
+}
+
+class Categoria {
+  - nombre : String
+}
+
+class Etiqueta {
+  - nombre : String
+}
+
+Publicacion <|-- Pregunta
+Publicacion <|-- Respuesta
+
+Pregunta "*" --> "1" Usuario : autor
+Pregunta "1" *-- "*" Respuesta : respuestas
+Respuesta "*" --> "1" Autor : autor
+Pregunta "*" --> "1" Categoria : categoria
+Pregunta "*" --> "*" Etiqueta : etiquetas
+
+Usuario ..> Pregunta : <<crea>>
+Pregunta ..> Autor : <<asigna>>
+
+' =========================================================
+' 4. STRATEGY PARA PROVEEDORES LLM
+' =========================================================
+interface EstrategiaLLM {
+  + generar(prompt : String) : String
+}
+
+class EstrategiaOpenAI {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+class EstrategiaGemini {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+class EstrategiaModeloLocal {
+  - modelo : String
+  + generar(prompt : String) : String
+}
+
+EstrategiaLLM <|.. EstrategiaOpenAI
+EstrategiaLLM <|.. EstrategiaGemini
+EstrategiaLLM <|.. EstrategiaModeloLocal
+
+class ServicioRespuestasAutomaticas {
+  - etiquetaActivadora : String
+  - tiempoMaximoSinRespuesta : Duration
+  + cambiarEstrategia(e : EstrategiaLLM) : void
+  + debeResponder(p : Pregunta) : boolean
+  + responder(p : Pregunta) : Respuesta
+}
+
+ServicioRespuestasAutomaticas o--> "1" EstrategiaLLM : estrategia
+ServicioRespuestasAutomaticas .right.> "1" AgenteIA : <<use>
+ServicioRespuestasAutomaticas ..> Pregunta : evalua
+
+@enduml
