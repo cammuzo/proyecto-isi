@@ -69,9 +69,9 @@ class FabricaAgenteIA {
 FabricaAutor <|-- FabricaAutorHumano
 FabricaAutor <|-- FabricaAgenteIA
 
-FabricaAutor ..> Autor : <<crea>>
-FabricaAutorHumano ..> UsuarioGeneral : <<crea>>
-FabricaAgenteIA ..> AgenteIA : <<crea>>
+FabricaAutor ..> Autor : <<create>>
+FabricaAutorHumano ..> UsuarioGeneral : <<create>>
+FabricaAgenteIA ..> AgenteIA : <<create>>
 
 ' =========================================================
 ' 3. CONTENIDO DEL DOMINIO
@@ -88,7 +88,6 @@ abstract class Publicacion {
 
 class Pregunta {
   - titulo : String
-  + agregarRespuesta(cuerpo : String, autor : Autor) : Respuesta
   + aceptarRespuesta(r : Respuesta, solicitante : Usuario) : void
 }
 
@@ -114,8 +113,8 @@ Respuesta "*" --> "1" Autor : autor
 Pregunta "*" --> "1" Categoria : categoria
 Pregunta "*" --> "*" Etiqueta : etiquetas
 
-Usuario ..> Pregunta : <<crea>>
-Pregunta ..> Autor : <<asigna>>
+Usuario ..> Pregunta : <<create>>
+Pregunta ..> Autor : asigna
 
 ' =========================================================
 ' 4. STRATEGY PARA PROVEEDORES LLM
